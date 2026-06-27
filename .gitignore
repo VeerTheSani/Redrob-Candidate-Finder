@@ -1,0 +1,31 @@
+# ============================================================
+# Large data files -- way too big for GitHub (100MB limit)
+# ============================================================
+
+# The full 100k candidate dataset (487 MB) -- don't upload this
+data/candidates.jsonl
+
+# Precomputed embeddings (153 MB) -- regenerate by running embedded_candidates.py
+artifacts/candidate_embeddings.npy
+artifacts/candidate_ids.npy
+
+# ============================================================
+# Python cache -- auto-generated, no point uploading
+# ============================================================
+__pycache__/
+*.py[cod]
+*.pyo
+.pyc
+
+# ============================================================
+# Virtual environment (if you have one)
+# ============================================================
+venv/
+.venv/
+env/
+
+# ============================================================
+# OS junk
+# ============================================================
+.DS_Store
+Thumbs.db

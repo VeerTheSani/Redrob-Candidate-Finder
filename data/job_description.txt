@@ -1,0 +1,38 @@
+Job Description: Senior AI Engineer 
+
+Location: Pune/Noida, India (Hybrid — flexible cadence) | Open to relocation candidates from Tier-1 Indian cities
+Employment Type: Full-time
+Experience Required: 5-9 years
+
+We need someone who is simultaneously comfortable with two things that sound contradictory:
+Deep technical depth in modern ML systems — embeddings, retrieval, ranking, LLMs, fine-tuning.
+Scrappy product-engineering attitude — willing to ship a working ranker in a week even if the underlying ML is "obviously suboptimal," because we need to learn from real users before we know what to actually optimize for.
+
+What you'd actually be doing: own the intelligence layer of Redrob's product. That means the ranking, retrieval, and matching systems that decide what recruiters see when they search for candidates and what candidates see when they search for roles. This involves embeddings, hybrid retrieval, and probably some LLM-based re-ranking. You will also set up evaluation infrastructure — offline benchmarks, online A/B testing, recruiter-feedback loops.
+
+
+Things you absolutely need:
+Production experience with embeddings-based retrieval systems (sentence-transformers, OpenAI embeddings, BGE, E5, or similar) deployed to real users — handling embedding drift, index refresh, retrieval-quality regression in production.
+Production experience with vector databases or hybrid search infrastructure — Pinecone, Weaviate, Qdrant, Milvus, OpenSearch, Elasticsearch, FAISS, or similar.
+Strong Python, real code quality.
+Hands-on experience designing evaluation frameworks for ranking systems — NDCG, MRR, MAP, offline-to-online correlation, A/B test interpretation.
+
+Things you absolutely need:
+Production experience with embeddings-based retrieval systems (sentence-transformers, OpenAI embeddings, BGE, E5, or similar) deployed to real users — handling embedding drift, index refresh, retrieval-quality regression in production.
+Production experience with vector databases or hybrid search infrastructure — Pinecone, Weaviate, Qdrant, Milvus, OpenSearch, Elasticsearch, FAISS, or similar.
+Strong Python, real code quality.
+Hands-on experience designing evaluation frameworks for ranking systems — NDCG, MRR, MAP, offline-to-online correlation, A/B test interpretation.
+
+
+LLM fine-tuning experience (LoRA, QLoRA, PEFT)
+Experience with learning-to-rank models (XGBoost-based or neural)
+Prior exposure to HR-tech, recruiting tech, or marketplace products
+Background in distributed systems or large-scale inference optimization
+Open-source contributions in the AI/ML space
+
+
+How to read between the lines — the "ideal candidate" is roughly:
+6-8 years total experience, of which 4-5 are in applied ML/AI roles at product companies .
+Has shipped at least one end-to-end ranking, search, or recommendation system to real users at meaningful scale.
+Has strong, defensible opinions about retrieval, evaluation and LLM integration.
+Located in or willing to relocate to Noida or Pune.
