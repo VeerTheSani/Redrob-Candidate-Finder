@@ -1,21 +1,10 @@
 import os
-
-# Hard guarantee: no network at rank time. The Stage-3 sandbox reproduces this
-# step with networking OFF, so the cross-encoder must load from the local repo.
 os.environ.setdefault("HF_HUB_OFFLINE", "1")
 os.environ.setdefault("TRANSFORMERS_OFFLINE", "1")
 
 import time
 import numpy as np
 import pandas as pd
-
-# ----------------------------------------------------------------------------
-# Phase-1 scoring knobs. The model is NOT one big product of everything (that
-# let a single weak factor veto a great candidate). Instead:
-#   phase1 = relevance_core  ×  soft_modifiers  ×  hard_gates
-# relevance_core is an *additive* weighted sum (no single 0 can kill it), soft
-# modifiers only nudge within a band, hard gates are the only things that crush.
-# ----------------------------------------------------------------------------
 
 W_SIM, W_SKILL, W_EXP, W_PROD = 0.45, 0.35, 0.12, 0.08
 CORE_ML_TITLE_BONUS = 0.06
@@ -27,11 +16,6 @@ LOCATION_FLOOR = 0.60
 NOTICE_FLOOR = 0.90
 ENGAGEMENT_FLOOR = 0.80
 
-# Over-experience: a TINY nudge only. The JD says "5-9 is a range, not a
-# requirement... we'll seriously consider candidates outside the band if other
-# signals are strong" — so we must NOT punish seniority hard. Floor 0.92 means a
-# 16yr+ candidate loses at most ~8%, enough to break ties toward the 6-8 sweet
-# spot but never enough to exclude a strong over-band candidate.
 OVEREXP_START = 10
 OVEREXP_FULL = 18
 OVEREXP_FLOOR = 0.92
@@ -50,11 +34,6 @@ PENALTY_FRAMEWORK = 0.25         # JD: LangChain-wrapper hobbyists, no real dept
 # means "private engineer", not "no external validation". Set < 1.0 to enable.
 PENALTY_CLOSED_SOURCE = 1.0
 
-# ----------------------------------------------------------------------------
-# Phase-2 cross-encoder reranker knobs.
-#   final = (1 - ALPHA) * phase1_norm  +  ALPHA * cross_encoder_norm
-# computed over the top-K shortlist only (the full 100k would blow the budget).
-# ----------------------------------------------------------------------------
 RERANK_MODEL_PATH = "artifacts/reranker"
 RERANK_IDS_PATH = "artifacts/candidate_rerank_ids.npy"
 RERANK_TEXTS_PATH = "artifacts/candidate_rerank_texts.npy"
