@@ -9,6 +9,14 @@ data/candidates.jsonl
 artifacts/candidate_embeddings.npy
 artifacts/candidate_ids.npy
 
+# Cross-encoder weights (133 MB, over GitHub's 100MB limit) -- regenerate by
+# running precompute/setup_reranker.py (it re-downloads + saves the model)
+artifacts/reranker/
+
+# Reranker input texts -- regenerate by running precompute/build_rerank_texts.py
+artifacts/candidate_rerank_texts.npy
+artifacts/candidate_rerank_ids.npy
+
 # ============================================================
 # Python cache -- auto-generated, no point uploading
 # ============================================================

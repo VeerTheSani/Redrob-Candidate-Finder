@@ -63,6 +63,18 @@ def check_date_logic(candidate: dict):
     return reasons
 
 
+def check_education_logic(candidate: dict):
+    ## graduation before enrollment = time machine = imposter
+    reasons = []
+    for edu in candidate.get("education", []):
+        start, end = edu.get("start_year"), edu.get("end_year")
+        if start and end and end < start:
+            reasons.append(
+                f"education at {edu.get('institution', '?')} ends {end} before it starts {start}"
+            )
+    return reasons
+
+
 def check_overlapping_jobs(candidate: dict):
     ## two jobs at the same time usually not legit or hes a alien so staight up disqualify that sucker, peak cinema, i'd do that all day
     reasons = []
@@ -86,6 +98,7 @@ def evaluate_candidate(candidate: dict) -> dict:
         + check_experience_math(candidate)
         + check_date_logic(candidate)
         + check_overlapping_jobs(candidate)
+        + check_education_logic(candidate)
     )
     return {
         "candidate_id": candidate["candidate_id"],
