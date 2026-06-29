@@ -48,7 +48,7 @@ ARCHITECT_TITLES = {"architect", "tech lead", "technical lead", "engineering man
 PREFERRED_LOCATIONS = {"pune", "noida"}
 ACCEPTABLE_LOCATIONS = {"hyderabad", "mumbai", "delhi", "delhi ncr", "gurgaon", "gurugram", "new delhi"}
 
-JD_MIN_YEARS, JD_MAX_YEARS = 4, 10  ## afual was arounf 6 9 but jd says it can be less punishing
+JD_MIN_YEARS, JD_MAX_YEARS = 5, 10  ## afual was arounf 6 9 but jd says it can be less punishing
 
 IRRELEVANT_TITLE_KEYWORDS = {
     "hr", "human resources", "marketing", "graphic", "civil",
