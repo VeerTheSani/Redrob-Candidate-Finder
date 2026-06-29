@@ -2,6 +2,7 @@ import os
 os.environ.setdefault("HF_HUB_OFFLINE", "1")
 os.environ.setdefault("TRANSFORMERS_OFFLINE", "1")
 
+import argparse
 import time
 import numpy as np
 import pandas as pd
@@ -15,6 +16,13 @@ TARGET_NICE_HITS = 2
 LOCATION_FLOOR = 0.60
 NOTICE_FLOOR = 0.90
 ENGAGEMENT_FLOOR = 0.80
+
+# Recruiter responsiveness — HARSH. The spec stresses availability: a perfect-on-
+# paper candidate who ignores recruiters (e.g. 5% response) "is not actually
+# available". No penalty at/above RESPONSE_OK; steep linear drop to RESPONSE_FLOOR
+# at response_rate 0, so a near-zero responder keeps only ~40% of their score.
+RESPONSE_OK = 0.40
+RESPONSE_FLOOR = 0.40
 
 OVEREXP_START = 10
 OVEREXP_FULL = 18
@@ -34,9 +42,9 @@ PENALTY_FRAMEWORK = 0.25         # JD: LangChain-wrapper hobbyists, no real dept
 # means "private engineer", not "no external validation". Set < 1.0 to enable.
 PENALTY_CLOSED_SOURCE = 1.0
 
-RERANK_MODEL_PATH = "artifacts/reranker"
-RERANK_IDS_PATH = "artifacts/candidate_rerank_ids.npy"
-RERANK_TEXTS_PATH = "artifacts/candidate_rerank_texts.npy"
+RERANK_MODEL_DIR = "reranker"
+RERANK_IDS_FILE = "candidate_rerank_ids.npy"
+RERANK_TEXTS_FILE = "candidate_rerank_texts.npy"
 SHORTLIST_K = 400
 ALPHA = 0.5
 JD_QUERY = (
@@ -119,6 +127,7 @@ def generate_reasoning(row):
     skills = _clean(row["matched_skill_names"])
     concern = _clean(row["primary_concern"])
     vreq = int(row["verified_required_hits"])
+    vnice = int(row["verified_nice_hits"])
     rreq = int(row["required_skill_hits"])
     prod = float(row["product_company_fraction"])
 
@@ -133,8 +142,20 @@ def generate_reasoning(row):
         strength = "some retrieval/ranking exposure, lightly evidenced"
     else:
         strength = "adjacent ML background with limited direct retrieval signal"
-    if skills:
+
+    counts = []
+    if vreq:
+        counts.append(f"{vreq} verified core")
+    if vnice:
+        counts.append(f"{vnice} nice-to-have")
+    noun = " skill" if (vreq + vnice) == 1 else " skills"
+    count_str = (", ".join(counts) + noun) if counts else ""
+    if skills and count_str:
+        strength += f" — {count_str} ({skills})"
+    elif skills:
         strength += f" ({skills})"
+    elif count_str:
+        strength += f" — {count_str}"
     sentence1 = f"{lead} — {strength}."
 
     if prod >= 0.7:
@@ -152,12 +173,13 @@ def generate_reasoning(row):
     return f"{sentence1} {ctx}".strip()
 
 
-def load_merged():
-    sims = compute_similarity("artifacts/candidate_embeddings.npy", "artifacts/jd_embedding.npy")
-    ids = np.load("artifacts/candidate_ids.npy")
+def load_merged(artifacts="artifacts"):
+    sims = compute_similarity(os.path.join(artifacts, "candidate_embeddings.npy"),
+                              os.path.join(artifacts, "jd_embedding.npy"))
+    ids = np.load(os.path.join(artifacts, "candidate_ids.npy"))
     df_sim = pd.DataFrame({"candidate_id": ids, "cosine_sim": sims})
-    df_feat = pd.read_csv("artifacts/features.csv")
-    df_hp = pd.read_csv("artifacts/honeypot_flags.csv")
+    df_feat = pd.read_csv(os.path.join(artifacts, "features.csv"))
+    df_hp = pd.read_csv(os.path.join(artifacts, "honeypot_flags.csv"))
     df = df_sim.merge(df_feat, on="candidate_id").merge(df_hp, on="candidate_id")
     return coerce_bools(df)
 
@@ -186,7 +208,14 @@ def compute_phase1(df):
         OVEREXP_FLOOR, 1.0,
     )
 
-    score = relevance * location_mod * notice_mod * engagement_mod * overexp_mod
+    resp = df["recruiter_response_rate"].to_numpy(dtype=float)
+    response_mod = np.where(
+        resp >= RESPONSE_OK,
+        1.0,
+        RESPONSE_FLOOR + (1 - RESPONSE_FLOOR) * (resp / RESPONSE_OK),
+    )
+
+    score = relevance * location_mod * notice_mod * engagement_mod * overexp_mod * response_mod
 
     score = np.where(df["is_consulting_only"], score * PENALTY_CONSULTING_ONLY, score)
     score = np.where(df["is_vision_speech_only"], score * PENALTY_VISION_SPEECH, score)
@@ -203,20 +232,20 @@ def compute_phase1(df):
     return df
 
 
-def reranker_available():
-    return (os.path.isdir(RERANK_MODEL_PATH)
-            and os.path.exists(RERANK_IDS_PATH)
-            and os.path.exists(RERANK_TEXTS_PATH))
+def reranker_available(artifacts="artifacts"):
+    return (os.path.isdir(os.path.join(artifacts, RERANK_MODEL_DIR))
+            and os.path.exists(os.path.join(artifacts, RERANK_IDS_FILE))
+            and os.path.exists(os.path.join(artifacts, RERANK_TEXTS_FILE)))
 
 
-def rerank(df):
+def rerank(df, artifacts="artifacts"):
     """Cross-encoder reranks the top-K Phase-1 shortlist (traps excluded), then
     blends with the Phase-1 score. Returns the shortlist with 'final_score'."""
     # pyrefly: ignore [missing-import]
     from sentence_transformers import CrossEncoder
 
-    rids = np.load(RERANK_IDS_PATH, allow_pickle=True)
-    rtexts = np.load(RERANK_TEXTS_PATH, allow_pickle=True)
+    rids = np.load(os.path.join(artifacts, RERANK_IDS_FILE), allow_pickle=True)
+    rtexts = np.load(os.path.join(artifacts, RERANK_TEXTS_FILE), allow_pickle=True)
     id2text = dict(zip(rids.tolist(), rtexts.tolist()))
 
     eligible = df[~df["is_honeypot"] & ~df["is_irrelevant_title"]]
@@ -225,7 +254,7 @@ def rerank(df):
     ).head(SHORTLIST_K).copy()
 
     texts = [id2text.get(cid, "") for cid in shortlist["candidate_id"]]
-    model = CrossEncoder(RERANK_MODEL_PATH)
+    model = CrossEncoder(os.path.join(artifacts, RERANK_MODEL_DIR))
     ce_raw = np.asarray(
         model.predict(list(zip([JD_QUERY] * len(texts), texts)), show_progress_bar=False),
         dtype=float,
@@ -238,17 +267,22 @@ def rerank(df):
 
 
 def main():
+    parser = argparse.ArgumentParser(description="Ranking step (offline, CPU, <=5 min). Reads precomputed artifacts/.")
+    parser.add_argument("--out", default="submission.csv", help="output CSV path")
+    parser.add_argument("--artifacts", default="artifacts", help="dir with precomputed artifacts")
+    args = parser.parse_args()
+
     start_time = time.time()
 
     print("Loading artifacts...")
-    df = load_merged()
+    df = load_merged(args.artifacts)
 
     print("Computing Phase-1 scores...")
     compute_phase1(df)
 
-    if reranker_available():
+    if reranker_available(args.artifacts):
         print(f"Reranking top-{SHORTLIST_K} shortlist with cross-encoder (alpha={ALPHA})...")
-        ranked = rerank(df)
+        ranked = rerank(df, args.artifacts)
     else:
         print("Reranker artifacts not found — falling back to Phase-1 score only.")
         ranked = df.copy()
@@ -266,7 +300,7 @@ def main():
     submission = top_100[["candidate_id", "rank", "final_score", "reasoning"]].copy()
     submission.rename(columns={"final_score": "score"}, inplace=True)
 
-    out_path = "submission.csv"
+    out_path = args.out
     submission.to_csv(out_path, index=False)
 
     elapsed = time.time() - start_time
