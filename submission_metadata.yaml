@@ -1,28 +1,32 @@
 # Redrob Hackathon — Submission Metadata
-# Fields marked  >>> FILL IN  are yours to complete (team / accounts / machine).
-# The technical fields are pre-filled to match this codebase.
 
-# ============================================================================
-# Team identity   >>> FILL IN
-# ============================================================================
-team_name: "CodeAstra"            # >>> FILL IN
+team_name: "CodeAstra"            
 
 primary_contact:
-  name: "Veer Rabari"                          # >>> FILL IN
-  email: "veerthesani@gmail.com"               # >>> FILL IN
-  phone: "+91-6354618579"                     # >>> FILL IN
+  name: "Veer Rabari"                          
+  email: "veerthesani@gmail.com"               
+  phone: "+91-6354618579"                     
 
-team_members:
-  - name: "Member 1 Full Name"               # >>> FILL IN
-    email: "member1@example.com"
-    role: "ML Engineer"
+team_member 2:
+  - name: "Abhay Jagatiya"               
+    email: "abhijagatiya111@gmail.com"
+    role: "Backend Softawre developer"
+
+  - name: "Nandani J solgma"            
+    email: "nandani.solgama@gmail.com"
+    role: "Frontend Softawre developer"
+
+  - name: "Veer Rabari"            
+    email: "veerthesani@gmail.com"
+    role: "ML developer"
+
   # Add more members as needed; solo participants list just one member
 
 # ============================================================================
 # Code and reproducibility
 # ============================================================================
-github_repo: "https://github.com/YOUR_USERNAME/YOUR_REPO"          # >>> FILL IN
-sandbox_link: "https://huggingface.co/spaces/YOUR_USERNAME/redrob-ranker"  # >>> FILL IN (your HF Space)
+github_repo: "gh repo clone VeerTheSani/Redrob-Candidate-Finder"          # >>> FILL IN
+sandbox_link: "https://huggingface.co/spaces/VeerTheSani/Redrobs_Candidate_FINDER"  # >>> FILL IN (your HF Space)
 
 reproduce_command: "python rank.py --out submission.csv"
 # The timed, offline ranking step. Precompute must run first (see README):
@@ -47,8 +51,8 @@ compute:
 # AI tools declaration
 # ============================================================================
 ai_tools_used:
-  - "NotebookLM"        # for research and self-clarification of project purpose, and it has very cool TTS is one of the reaason
-  - "Claude"            # via the direct message and rule base ranking algrorithm and readme file (tbh i had no idea about some of the model like bm25 or cross-encoder but thanks to claude i am so much more aware now, thanks to guys for that specially)
+  - "NotebookLM"        # for research and self-clarification of project purpose, and it has very cool TTS is one of the reaason, also for the ppt generaion
+  - "Claude"            # via the CLM and direct message and rule base ranking algrorithm and readme file (tbh i had no idea about some of the model like bm25 or cross-encoder but thanks to claude i am so much more aware now, thanks to guys for that specially)
   - "kimi 2.6"          # comparison of rank , like before vs after and cause kimi is so good reading long documentation i thought why not 
 
 ai_usage_summary: |
