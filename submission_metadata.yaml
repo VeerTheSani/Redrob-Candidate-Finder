@@ -25,7 +25,7 @@ team_member 2:
 # ============================================================================
 # Code and reproducibility
 # ============================================================================
-github_repo: "gh repo clone VeerTheSani/Redrob-Candidate-Finder"          # >>> FILL IN
+github_repo: "https://github.com/VeerTheSani/Redrob-Candidate-Finder"          # >>> FILL IN
 sandbox_link: "https://huggingface.co/spaces/VeerTheSani/Redrobs_Candidate_FINDER"  # >>> FILL IN (your HF Space)
 
 reproduce_command: "python rank.py --out submission.csv"
