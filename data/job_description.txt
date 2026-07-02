@@ -47,7 +47,7 @@ People whose work has been entirely on closed-source proprietary systems for 5+ 
 On location, comp, and logistics
 Location: Pune/Noida-preferred but flexible. We have offices in Noida and Pune(mostly used Tue/Thu). We don't require any specific number of in-office days but we expect quarterly travel for offsites. Candidates in Hyderabad, Pune, Mumbai, Delhi NCR welcome to apply. Outside India: case-by-case, but we don't sponsor work visas.
 Notice period: We'd love sub-30-day notice. We can buy out up to 30 days. 30+ day notice candidates are still in scope but the bar gets higher.
-The vibe check
+
 We genuinely believe culture-fit matters more at this stage than skills-fit. Skills are teachable; the rest mostly isn't.
 We work async-first and write a lot. If you find writing painful, you'll find this role painful.
 We disagree openly and decide quickly. If you find that style abrasive, you'll find this role abrasive.
@@ -58,11 +58,3 @@ The "ideal candidate" we're imagining is roughly:
 Has shipped at least one end-to-end ranking, search, or recommendation system to real users at meaningful scale.
 Has strong opinions about retrieval (hybrid vs dense), evaluation (offline vs online), and LLM integration (when to fine-tune vs prompt) — and can defend them with reference to systems they actually built.
 Located in or willing to relocate to Noida or Pune.
-Active on Redrob platform (or has clear signal of being in the job market) so we can actually talk to them.
-We are aware this is a narrow profile. We're not expecting to find many matches in a 100K candidate pool. We're explicitly OK with that — we'd rather see 10 great matches than 1000 maybes.
-Final note for the participants of the Redrob hackathon
-If you're reading this in the context of the Intelligent Candidate Discovery & Ranking Challenge:
-The "right answer" to this JD is not "find candidates whose skills section contains the most AI keywords." That's a trap we've explicitly built into the dataset.
-The right answer involves reasoning about the gap between what the JD says and what the JD means. A Tier 5 candidate may not use the words "RAG" or "Pinecone" in their profile, but if their career history shows they built a recommendation system at a product company, they're a fit. A candidate who has all the AI keywords listed as skills but whose title is "Marketing Manager" is not a fit, no matter how perfect their skill list looks.
-Your ranking system should also weigh behavioral signals — a perfect-on-paper candidate who hasn't logged in for 6 months and has a 5% recruiter response rate is, for hiring purposes, not actually available. Down-weight them appropriately.
-Good luck.

@@ -1,0 +1,93 @@
+# Redrob Hackathon — Submission Metadata
+# Fields marked  >>> FILL IN  are yours to complete (team / accounts / machine).
+# The technical fields are pre-filled to match this codebase.
+
+# ============================================================================
+# Team identity   >>> FILL IN
+# ============================================================================
+team_name: "CodeAstra"            # >>> FILL IN
+
+primary_contact:
+  name: "Veer Rabari"                          # >>> FILL IN
+  email: "veerthesani@gmail.com"               # >>> FILL IN
+  phone: "+91-6354618579"                     # >>> FILL IN
+
+team_members:
+  - name: "Member 1 Full Name"               # >>> FILL IN
+    email: "member1@example.com"
+    role: "ML Engineer"
+  # Add more members as needed; solo participants list just one member
+
+# ============================================================================
+# Code and reproducibility
+# ============================================================================
+github_repo: "https://github.com/YOUR_USERNAME/YOUR_REPO"          # >>> FILL IN
+sandbox_link: "https://huggingface.co/spaces/YOUR_USERNAME/redrob-ranker"  # >>> FILL IN (your HF Space)
+
+reproduce_command: "python rank.py --out submission.csv"
+# The timed, offline ranking step. Precompute must run first (see README):
+#   python precompute_all.py            # slow, network on, builds artifacts/
+#   python rank.py --out submission.csv # offline, CPU-only, <=5 min
+
+# ============================================================================
+# Compute environment
+# ============================================================================
+compute:
+  platform: "Local Windows PC"                 # >>> FILL IN (e.g. exact CPU / laptop model)
+  cpu_cores: 8                                  # >>> FILL IN (your core count)
+  ram_gb: 16                                    # >>> FILL IN (your RAM)
+  python_version: "3.14"                        # >>> VERIFY with: python --version
+  os: "Windows 11"
+  uses_gpu_for_inference: false                 # ranking is CPU-only
+  has_network_during_ranking: false             # rank.py sets HF_HUB_OFFLINE=1
+  pre_computation_required: true                # we precompute embeddings + reranker
+  pre_computation_time_minutes: 35              # python precompute_all.py (~33 min embed + ~2 min)
+
+# ============================================================================
+# AI tools declaration
+# ============================================================================
+ai_tools_used:
+  - "NotebookLM"        # for research and self-clarification of project purpose, and it has very cool TTS is one of the reaason
+  - "Claude"            # via the direct message and rule base ranking algrorithm and readme file (tbh i had no idea about some of the model like bm25 or cross-encoder but thanks to claude i am so much more aware now, thanks to guys for that specially)
+  - "kimi 2.6"          # comparison of rank , like before vs after and cause kimi is so good reading long documentation i thought why not 
+
+ai_usage_summary: |
+  Used Claude  for architecture discussion,
+  implementation, iterative code review, and debugging. The team directed all
+  design decisions, parameter tuning, validation, and analysis. No candidate
+  data is sent to any LLM during ranking (i really wanted to add llm layer that 
+  atleast examine the top 20 and it would have been so much but the rules restricted that)
+  the ranking step is fully offline and uses only local models (a sentence-transformers
+  bi-encoder and a cross-encoder).
+
+# ============================================================================
+# Approach summary
+# ============================================================================
+methodology_summary: |
+  A recall->precision funnel that stays inside the offline / CPU / 5-minute budget.
+  Recall: every candidate and the JD are embedded with all-MiniLM-L6-v2; cosine
+  similarity captures semantic fit even for candidates who don't use the JD's
+  keywords (if i am sure ,which i definitely am). Rule features add an evidence-weighted skill score that corroborates
+  each claimed skill against its tenure, endorsements, and platform assessment —
+  neutralising the keyword-stuffer traps.. plus experience, location, notice, and
+  behavioural / availability signals. These combine in a three-part score: an
+  additive relevance core (no single weak factor can veto a strong candidate),
+  bounded soft modifiers, and hard gates that zero out honeypots (impossible
+  date/skill math) and the JD's explicit disqualifiers (consulting-only,
+  vision/speech-only, recent-AI-only, title-chasers, hands-off architects,
+  pure-research, framework-enthusiasts). Unresponsive candidates are harshly
+  down-weighted, per the JD's availability emphasis. Precision: the top-400
+  shortlist is reranked by a local CPU cross-encoder (ms-marco-MiniLM-L-12-v2)
+  that reads JD and candidate jointly, blended 50/50 with the rule score.
+  Per-candidate reasoning is generated from real profile facts. Ranking runs in
+  ~40s offline; embedding plus model download are a separate precompute step.
+
+# ============================================================================
+# Declarations
+# ============================================================================
+declarations:
+  read_submission_spec: true
+  code_is_original_work: true
+  no_collusion: true               
+  honeypot_check_done: true         # we explicitly detect + zero out honeypots
+  reproduction_tested: true         # rank.py --out submission.csv verified end-to-end

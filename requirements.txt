@@ -1,3 +1,4 @@
 pandas
 numpy
 sentence-transformers>=3.0
+gradio>=4.0   # only needed for the sandbox demo (app.py); not used by the ranking step

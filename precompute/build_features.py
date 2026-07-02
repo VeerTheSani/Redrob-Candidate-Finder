@@ -1,5 +1,6 @@
 import argparse
 import json
+import math
 import re
 from datetime import date
 
@@ -15,7 +16,10 @@ REQUIRED_SKILL_KEYWORDS = {
     "embeddings", "sentence-transformers", "bge", "e5",
     "vector database", "pinecone", "weaviate", "qdrant", "milvus",
     "opensearch", "elasticsearch", "faiss", "retrieval", "ranking",
-    "ndcg", "mrr", "map", "evaluation",
+    "ndcg", "mrr", "evaluation",
+    # A recommender/search builder should count as relevant even without RAG/Pinecone
+    # tags, so these system keywords sit alongside the specific tool names.
+    "recommendation", "search", "personalization",
 }
 NICE_TO_HAVE_KEYWORDS = {
     "lora", "qlora", "peft", "fine-tuning", "learning-to-rank", "xgboost",
@@ -33,8 +37,15 @@ SKILL_SYNONYMS = {
     "elasticsearch": ["elastic search"],
     "fine-tuning": ["finetuning", "fine tuning"],
     "learning-to-rank": ["learning to rank", "ltr"],
-    "evaluation": ["offline eval", "ab test", "a/b test", "ab testing"],
+    "evaluation": ["offline eval", "ab test", "a/b test", "ab testing",
+                   "mean average precision", "map@", "precision@", "recall@"],
     "retrieval-augmented": ["rag"],
+    "recommendation": ["recommender", "recommendation system", "recommender system",
+                       "collaborative filtering", "matrix factorization", "recsys",
+                       "recommendation engine"],
+    "search": ["search relevance", "search ranking", "query understanding",
+               "search engine", "learning to rank"],
+    "personalization": ["personalisation", "personalized ranking", "personalized feed"],
 }
 
 VISION_SPEECH_ROBOTICS_KEYWORDS = {
@@ -48,7 +59,7 @@ ARCHITECT_TITLES = {"architect", "tech lead", "technical lead", "engineering man
 PREFERRED_LOCATIONS = {"pune", "noida"}
 ACCEPTABLE_LOCATIONS = {"hyderabad", "mumbai", "delhi", "delhi ncr", "gurgaon", "gurugram", "new delhi"}
 
-JD_MIN_YEARS, JD_MAX_YEARS = 5, 10  ## afual was arounf 6 9 but jd says it can be less punishing
+JD_MIN_YEARS, JD_MAX_YEARS = 5, 9  ## JD headline band; rank.py applies a firm out-of-band penalty
 
 IRRELEVANT_TITLE_KEYWORDS = {
     "hr", "human resources", "marketing", "graphic", "civil",
@@ -74,9 +85,38 @@ WRAPPER_FRAMEWORK_KEYWORDS = {
     "langchain", "llamaindex", "llama index", "autogpt", "auto-gpt", "crewai", "babyagi",
 }
 
-SKILL_MIN_MONTHS = 6
-SKILL_MIN_ENDORSEMENTS = 5
-SKILL_MIN_ASSESSMENT = 60
+# Maps surface phrases in career-history descriptions to a canonical system label,
+# so a candidate who shipped a recommender is credited even with no matching skill tags.
+SYSTEM_LABELS = {
+    "recommendation": "recommendation", "recommender": "recommendation",
+    "collaborative filtering": "recommendation", "recsys": "recommendation",
+    "ranking": "ranking", "learning to rank": "ranking", "re-ranking": "ranking",
+    "reranking": "ranking", "relevance": "ranking",
+    "retrieval": "retrieval", "semantic search": "retrieval",
+    "dense retrieval": "retrieval", "vector search": "retrieval",
+    "search": "search", "search engine": "search", "query understanding": "search",
+    "personalization": "personalization", "personalisation": "personalization",
+    "embedding": "embeddings", "embeddings": "embeddings",
+    "matching": "matching", "recommendation engine": "recommendation",
+}
+BUILD_VERBS = {
+    "built", "build", "building", "shipped", "designed", "developed", "deployed",
+    "launched", "led", "scaled", "owned", "architected", "created", "rebuilt",
+}
+
+# Word-boundary matchers so "research" no longer matches "search" and "compiled"
+# no longer matches "led". Compiled once at import.
+SYSTEM_LABEL_PATTERNS = [(re.compile(r"\b" + re.escape(p) + r"\b"), c) for p, c in SYSTEM_LABELS.items()]
+BUILD_VERB_PATTERN = re.compile(r"\b(?:" + "|".join(re.escape(v) for v in BUILD_VERBS) + r")\b")
+
+# Evidence-strength curves (continuous, no hard thresholds): saturating curves give
+# diminishing returns on duration/endorsements, a sigmoid gives a soft pass-zone on
+# the assessment score. So "37 endorsements" beats "5", instead of both maxing out.
+DUR_K = 12              # months for half credit
+END_K = 15             # endorsements for half credit
+ASSESS_MID = 55        # sigmoid midpoint (soft pass mark)
+ASSESS_STEEP = 8
+EVIDENCE_THRESH = 0.25  # strength above this = a skill "counts" (for reasoning text only)
 
 
 def build_matchers(keywords: set) -> dict:
@@ -161,23 +201,40 @@ def is_vision_speech_only(candidate: dict) -> bool:
 
 
 def is_title_chaser(candidate: dict) -> bool:
-   ##stictly terminate those suckers who are replacing company every 1.5 years
+    ## strictly terminate those suckers who replace company every ~1.5 years.
+    ## AVERAGE was gameable: one 44-month stint hides three 6-14 month hops.
+    ## Median + count-of-short-stints captures the *pattern*, not the mean.
     history = candidate["career_history"]
     if len(history) < 3:
         return False
-    avg_tenure_months = sum(j["duration_months"] for j in history) / len(history)
-    return avg_tenure_months < 18
+    durs = sorted(j["duration_months"] for j in history)
+    n = len(durs)
+    median = durs[n // 2] if n % 2 else (durs[n // 2 - 1] + durs[n // 2]) / 2
+    short_stints = sum(1 for d in durs if d < 18)
+    # needs BOTH a low-median tenure AND corroborating short stints, so a single
+    # short blip in an otherwise-stable career doesn't trip it. Loosen (short>=3 /
+    # median<15) if too aggressive, tighten (short>=2 / median<20) if too lax.
+    return median < 18 and short_stints >= 2
 
 
-### this seems is not a good way to calc a lead architect's working/coding capacity, we must evaluate his github activity
-## later , make it pendiing and use a mid quality rn
+## An architect/lead title alone doesn't mean "stopped coding". Use the github
+## activity signal (the JD's real concern is "no production code in 18 months").
+GITHUB_HANDSON_THRESHOLD = 40  # >= this => clearly still shipping code => don't penalize
+
+
 def is_architect_not_coding(candidate: dict) -> bool:
     current_job = next((j for j in candidate["career_history"] if j["is_current"]), None)
     if current_job is None:
         return False
     title_lower = current_job["title"].lower()
     is_architect_title = any(kw in title_lower for kw in ARCHITECT_TITLES)
-    return is_architect_title and current_job["duration_months"] >= 18
+    if not (is_architect_title and current_job["duration_months"] >= 18):
+        return False
+    gh = candidate["redrob_signals"].get("github_activity_score", -1)
+    # strong, recent code output overrides the title signal
+    if gh is not None and gh >= GITHUB_HANDSON_THRESHOLD:
+        return False
+    return True
 
 
 def is_recent_ai_only(candidate: dict) -> bool:
@@ -233,47 +290,48 @@ def assessment_lookup(signals: dict) -> dict:
     return {str(k).lower(): v for k, v in scores.items()}
 
 
-def skill_is_evidenced(skill: dict, assess: dict) -> bool:
-    if skill.get("duration_months", 0) >= SKILL_MIN_MONTHS:
-        return True
-    if skill.get("endorsements", 0) >= SKILL_MIN_ENDORSEMENTS:
-        return True
-    score = assess.get(skill["name"].lower())
-    return score is not None and score >= SKILL_MIN_ASSESSMENT
+def _sigmoid(x: float) -> float:
+    return 1.0 / (1.0 + math.exp(-x))
+
+
+def skill_strength(skill: dict, assess: dict) -> float:
+    ## continuous 0-1 evidence strength: saturating duration + endorsements, sigmoid assessment
+    dur = skill.get("duration_months", 0)
+    end = skill.get("endorsements", 0)
+    dur_s = dur / (dur + DUR_K)
+    end_s = end / (end + END_K)
+    a = assess.get(skill["name"].lower())
+    ass_s = _sigmoid((a - ASSESS_MID) / ASSESS_STEEP) if a is not None else 0.0
+    return 1.0 - (1.0 - dur_s) * (1.0 - end_s) * (1.0 - ass_s)  # soft-OR of the three
 
 
 def skill_evidence(candidate: dict):
     signals = candidate["redrob_signals"]
     assess = assessment_lookup(signals)
 
-    verified_required, verified_nice = set(), set()
-    claimed_ai, evidenced_ai = 0, 0
-    relevant = []
+    req_strength, nice_strength = {}, {}   # canonical keyword -> best skill strength
+    strengths = []                          # per claimed AI skill, for ratio + names
 
     for s in candidate.get("skills", []):
         name_l = s["name"].lower()
         if not any_match(AI_MATCHERS, name_l):
             continue
-        claimed_ai += 1
-        evidenced = skill_is_evidenced(s, assess)
-        strength = (
-            assess.get(name_l, 0),
-            s.get("endorsements", 0),
-            s.get("duration_months", 0),
-        )
-        relevant.append((evidenced, strength, s["name"]))
-        if evidenced:
-            evidenced_ai += 1
-            verified_required |= matched_keywords(REQUIRED_MATCHERS, name_l)
-            verified_nice |= matched_keywords(NICE_MATCHERS, name_l)
+        st = skill_strength(s, assess)
+        strengths.append((st, s["name"]))
+        for kw in matched_keywords(REQUIRED_MATCHERS, name_l):
+            req_strength[kw] = max(req_strength.get(kw, 0.0), st)
+        for kw in matched_keywords(NICE_MATCHERS, name_l):
+            nice_strength[kw] = max(nice_strength.get(kw, 0.0), st)
 
-    relevant.sort(key=lambda r: (r[0], r[1]), reverse=True)
-    matched_names = ", ".join(name for _, _, name in relevant[:4])
+    strengths.sort(reverse=True)
+    matched_names = ", ".join(name for _, name in strengths[:4])
+    evidence_ratio = (sum(st for st, _ in strengths) / len(strengths)) if strengths else 0.5
 
-    evidence_ratio = (evidenced_ai / claimed_ai) if claimed_ai else 0.5
     return {
-        "verified_required_hits": len(verified_required),
-        "verified_nice_hits": len(verified_nice),
+        "verified_required_hits": sum(1 for v in req_strength.values() if v >= EVIDENCE_THRESH),
+        "verified_nice_hits": sum(1 for v in nice_strength.values() if v >= EVIDENCE_THRESH),
+        "verified_required_strength": round(sum(req_strength.values()), 4),
+        "verified_nice_strength": round(sum(nice_strength.values()), 4),
         "skill_evidence_ratio": round(evidence_ratio, 3),
         "matched_skill_names": matched_names,
     }
@@ -303,32 +361,47 @@ def neutral_rate(value, neutral: float = 0.5) -> float:
     return float(value)
 
 
-def primary_concern(feat: dict) -> str:
-    if feat["is_pure_research"]:
-        return "pure research/academic background with no production deployment"
-    if feat["is_consulting_only"]:
-        return "experience is entirely at consulting/services firms, not product teams"
-    if feat["is_vision_speech_only"]:
-        return "background is vision/speech, with no NLP or retrieval signal"
-    if feat["is_framework_enthusiast"]:
-        return "LLM-wrapper projects without evidenced retrieval/ranking depth"
-    if feat["is_recent_ai_only"]:
-        return "AI skills are recent additions to an otherwise non-AI career"
-    if feat["is_title_chaser"]:
-        return "short average tenure (<18 months) suggests frequent job changes"
-    if feat["is_architect_not_coding"]:
-        return "long-tenured architect/lead title — may be hands-off on coding"
-    if feat["skill_evidence_ratio"] < 0.34:
-        return "several claimed AI skills lack tenure, endorsements, or assessment backing"
-    if feat["verified_required_hits"] == 0:
-        return "core retrieval/ranking skills are not clearly evidenced"
-    if feat["notice_period_days"] and feat["notice_period_days"] > 60:
-        return f"{int(feat['notice_period_days'])}-day notice period"
-    if feat["location_fit"] <= 0.5:
-        return "located outside the Pune/Noida-relocatable target cities"
-    if not (JD_MIN_YEARS <= feat["years_of_experience"] <= JD_MAX_YEARS):
-        return "total experience sits outside the 5-9 year target band"
-    return ""
+def extract_evidence_highlight(candidate: dict) -> dict:
+    """Reads career-history descriptions (not skill tags) for the most JD-relevant
+    system this person actually built, and where. Credits 'built a recommender at
+    Flipkart' even with zero keyword skills. Every token comes from the candidate's
+    own data. Returns:
+      highlight -> short grounded phrase ('' if no system-building signal)
+      score     -> numeric build signal (a BUILT system counts more than one merely
+                   worked on); feeds the score so 'built a system' is rewarded."""
+    hits = []  # (label, company, built_flag)
+    for job in candidate["career_history"]:
+        desc = (job.get("description") or "").lower()
+        if not desc:
+            continue
+        labels = {canon for pat, canon in SYSTEM_LABEL_PATTERNS if pat.search(desc)}
+        if not labels:
+            continue
+        built = bool(BUILD_VERB_PATTERN.search(desc))
+        company = job.get("company", "")
+        for lab in labels:
+            hits.append((lab, company, built))
+    if not hits:
+        return {"highlight": "", "score": 0.0}
+
+    seen, labels_ordered = set(), []
+    companies, any_built = [], False
+    built_labels, worked_labels = set(), set()
+    for lab, comp, built in hits:
+        if lab not in seen:
+            seen.add(lab)
+            labels_ordered.append(lab)
+        (built_labels if built else worked_labels).add(lab)
+        if built:
+            any_built = True
+        if comp and comp not in companies:
+            companies.append(comp)
+
+    lab_str = "/".join(labels_ordered[:2])            # e.g. "ranking/retrieval"
+    verb = "built" if any_built else "worked on"
+    where = (" at " + " and ".join(companies[:2])) if companies else ""
+    score = len(built_labels) + 0.5 * len(worked_labels - built_labels)
+    return {"highlight": f"{verb} {lab_str} systems{where}", "score": round(score, 3)}
 
 
 def build_row(candidate: dict, today: date) -> dict:
@@ -339,10 +412,14 @@ def build_row(candidate: dict, today: date) -> dict:
     required_hits = len(matched_keywords(REQUIRED_MATCHERS, blob))
     nice_hits = len(matched_keywords(NICE_MATCHERS, blob))
     evidence = skill_evidence(candidate)
+    highlight_info = extract_evidence_highlight(candidate)
 
     title_lower = profile["current_title"].lower()
-    is_irrelevant_title = any_match(IRRELEVANT_MATCHERS, title_lower)
     is_core_ml_title = any_match(CORE_ML_MATCHERS, title_lower)
+    # ZERO-OUT gate: only fire when the title matches an irrelevant keyword AND has
+    # no core-ML signal. Otherwise "ML Operations Engineer", "Marketing Data
+    # Scientist", "Sales Engineer, ML Platform" were being deleted outright.
+    is_irrelevant_title = any_match(IRRELEVANT_MATCHERS, title_lower) and not is_core_ml_title
 
     row = {
         "candidate_id": candidate["candidate_id"],
@@ -357,8 +434,12 @@ def build_row(candidate: dict, today: date) -> dict:
         "nice_to_have_hits": nice_hits,
         "verified_required_hits": evidence["verified_required_hits"],
         "verified_nice_hits": evidence["verified_nice_hits"],
+        "verified_required_strength": evidence["verified_required_strength"],
+        "verified_nice_strength": evidence["verified_nice_strength"],
         "skill_evidence_ratio": evidence["skill_evidence_ratio"],
         "matched_skill_names": evidence["matched_skill_names"],
+        "evidence_highlight": highlight_info["highlight"],
+        "system_build_score": highlight_info["score"],
         "product_company_fraction": round(product_company_fraction(candidate), 3),
         "is_consulting_only": is_consulting_only(candidate),
         "is_vision_speech_only": is_vision_speech_only(candidate),
@@ -380,7 +461,6 @@ def build_row(candidate: dict, today: date) -> dict:
         "is_irrelevant_title": is_irrelevant_title,
         "is_core_ml_title": is_core_ml_title,
     }
-    row["primary_concern"] = primary_concern(row)
     return row
 
 

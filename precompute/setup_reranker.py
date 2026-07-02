@@ -1,6 +1,6 @@
-"""One-time, ONLINE precompute: download the cross-encoder reranker and save it
+"""One-time, online precompute: download the cross-encoder reranker and save it
 into the repo (artifacts/reranker/) so the ranking step can load it locally with
-no network — which is what makes Stage-3 sandbox reproduction work.
+no network.
 
 Run once:  python precompute/setup_reranker.py
 """

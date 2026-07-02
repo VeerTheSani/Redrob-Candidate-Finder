@@ -81,5 +81,8 @@ python compare_rankings.py
 1. **Embed** — converts the JD and every candidate's profile into vectors using `all-MiniLM-L6-v2` (bi-encoder, for fast recall over 100k)
 2. **Features** — rule-based signals: experience fit, location, notice, engagement, and **evidence-weighted** skill matching (verified hits vs keyword stuffing)
 3. **Honeypots** — flags candidates with impossible dates/math (planted traps)
-4. **Rank** — a **3-part score**: additive *relevance core* (cosine + verified skills + experience + product-company) × *bounded soft modifiers* (location / notice / engagement) × *hard gates* (zero out honeypots & irrelevant titles, penalize genuine mismatches)
+4. **Rank** — a **3-part score**:
+   - *relevance core* (additive, so no single weak signal can veto a strong candidate): cosine similarity + evidence-weighted skills + a **"built a ranking / search / recommendation system" signal** + experience fit + product-company share (+ a small core-ML-title bonus)
+   - *modifiers* (multiplicative): gentle nudges for location / notice / engagement, plus **firmer penalties** for out-of-band experience (the 5–9 yr rule) and low recruiter responsiveness
+   - *hard gates*: honeypots and irrelevant titles → 0; genuine mismatches (consulting-only, vision/speech-only, title-chaser, architect-not-coding, …) heavily penalized
 5. **Rerank** — the top-400 shortlist is reordered by a local **cross-encoder** (`ms-marco-MiniLM-L-12-v2`) that reads the JD and candidate jointly, then blended 50/50 with the Phase-1 score → top 100. Runs CPU-only, offline, in ~40s.

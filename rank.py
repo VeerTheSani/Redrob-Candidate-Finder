@@ -3,30 +3,34 @@ os.environ.setdefault("HF_HUB_OFFLINE", "1")
 os.environ.setdefault("TRANSFORMERS_OFFLINE", "1")
 
 import argparse
+import sys
 import time
 import numpy as np
 import pandas as pd
 
-W_SIM, W_SKILL, W_EXP, W_PROD = 0.45, 0.35, 0.12, 0.08
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "precompute"))
+# pyrefly: ignore [missing-import]
+from reasoning import generate_reasoning
+
+W_SIM, W_SKILL, W_SYSTEM, W_EXP, W_PROD = 0.40, 0.30, 0.15, 0.10, 0.05
 CORE_ML_TITLE_BONUS = 0.06
 
-TARGET_REQ_HITS = 4
-TARGET_NICE_HITS = 2
 
 LOCATION_FLOOR = 0.60
 NOTICE_FLOOR = 0.90
 ENGAGEMENT_FLOOR = 0.80
 
-# Recruiter responsiveness — HARSH. The spec stresses availability: a perfect-on-
-# paper candidate who ignores recruiters (e.g. 5% response) "is not actually
-# available". No penalty at/above RESPONSE_OK; steep linear drop to RESPONSE_FLOOR
-# at response_rate 0, so a near-zero responder keeps only ~40% of their score.
+# Recruiter responsiveness penalty: no penalty at/above RESPONSE_OK, then a steep
+# linear drop to RESPONSE_FLOOR at response_rate 0 (a near-zero responder keeps ~40%).
 RESPONSE_OK = 0.40
 RESPONSE_FLOOR = 0.40
 
-OVEREXP_START = 10
-OVEREXP_FULL = 18
-OVEREXP_FLOOR = 0.92
+# Experience band (JD headline: 5-9 yrs). FIRM two-sided penalty: lose BAND_PER_YEAR
+# per year outside [BAND_MIN, BAND_MAX], down to BAND_FLOOR. So <5 or >9 is clearly
+# down-weighted — but floored (not zeroed) so a truly exceptional outlier can survive.
+BAND_MIN, BAND_MAX = 5, 9
+BAND_PER_YEAR = 0.30    # HARD: 1 yr out = -30%, 2 yrs out = -60%
+BAND_FLOOR = 0.20       # far out-of-band keeps only 20%
 
 SAVED_CAP = 10
 SEARCH_CAP = 50
@@ -78,24 +82,22 @@ def coerce_bools(df):
     return df
 
 
-def minmax(x):
-    x = np.asarray(x, dtype=float)
-    lo, hi = float(np.min(x)), float(np.max(x))
-    if hi - lo < 1e-9:
-        return np.full_like(x, 0.5, dtype=float)
-    return (x - lo) / (hi - lo)
+def pct(x):
+    # percentile rank in (0,1]: a candidate's standing vs the whole pool on this
+    # signal. No caps/floors, robust to outliers, and ties are averaged — so the
+    # max-offering candidate rises and nobody is flattened at a ceiling.
+    return pd.Series(np.asarray(x, dtype=float)).rank(pct=True).to_numpy()
 
 
 def skill_score(df):
-    """0-1 evidence-weighted skill match. Verified hits (corroborated by tenure /
-    endorsements / assessment) count most; raw text hits a little; scaled by the
-    skill-evidence ratio so keyword stuffers are pulled down."""
-    req = 0.7 * np.minimum(df["verified_required_hits"] / TARGET_REQ_HITS, 1.0) \
-        + 0.3 * np.minimum(df["required_skill_hits"] / TARGET_REQ_HITS, 1.0)
-    nice = 0.5 * np.minimum(df["verified_nice_hits"] / TARGET_NICE_HITS, 1.0) \
-        + 0.5 * np.minimum(df["nice_to_have_hits"] / TARGET_NICE_HITS, 1.0)
-    base = 0.8 * req + 0.2 * nice
-    return base * (0.6 + 0.4 * df["skill_evidence_ratio"])
+    # Continuous, uncapped skill evidence: graded strengths (not binary hits), plus a
+    # little credit for raw text mentions, scaled by the evidence ratio (anti-stuffing).
+    # Percentile-ranked so it differentiates across the whole pool with no ceiling.
+    raw = (df["verified_required_strength"]
+           + 0.4 * df["verified_nice_strength"]
+           + 0.15 * df["required_skill_hits"])
+    raw = raw * (0.6 + 0.4 * df["skill_evidence_ratio"])
+    return pct(raw)
 
 
 def engagement_score(df):
@@ -113,66 +115,6 @@ def engagement_score(df):
     return parts.mean(axis=0)
 
 
-def _clean(v):
-    return "" if (v is None or (isinstance(v, float) and np.isnan(v))) else str(v).strip()
-
-
-def generate_reasoning(row):
-    """Specific, varied, honest 1-2 sentence justification built only from fields
-    that exist on the candidate (Stage-4 checks for named facts, JD connection,
-    honest concerns, no hallucination)."""
-    title = _clean(row["current_title"]) or "Engineer"
-    company = _clean(row["current_company"])
-    yrs = row["years_of_experience"]
-    skills = _clean(row["matched_skill_names"])
-    concern = _clean(row["primary_concern"])
-    vreq = int(row["verified_required_hits"])
-    vnice = int(row["verified_nice_hits"])
-    rreq = int(row["required_skill_hits"])
-    prod = float(row["product_company_fraction"])
-
-    where = f" at {company}" if company else ""
-    lead = f"{title}{where}, {yrs:g} yrs"
-
-    if vreq >= 3:
-        strength = "strong, evidenced retrieval/ranking depth"
-    elif vreq >= 1:
-        strength = "demonstrated retrieval/ranking skills"
-    elif rreq >= 1:
-        strength = "some retrieval/ranking exposure, lightly evidenced"
-    else:
-        strength = "adjacent ML background with limited direct retrieval signal"
-
-    counts = []
-    if vreq:
-        counts.append(f"{vreq} verified core")
-    if vnice:
-        counts.append(f"{vnice} nice-to-have")
-    noun = " skill" if (vreq + vnice) == 1 else " skills"
-    count_str = (", ".join(counts) + noun) if counts else ""
-    if skills and count_str:
-        strength += f" — {count_str} ({skills})"
-    elif skills:
-        strength += f" ({skills})"
-    elif count_str:
-        strength += f" — {count_str}"
-    sentence1 = f"{lead} — {strength}."
-
-    if prod >= 0.7:
-        ctx = "Largely product-company experience, matching the JD's preference."
-    elif prod <= 0.3:
-        ctx = "Mostly services-company background."
-    else:
-        ctx = "Mixed product/services background."
-
-    if concern:
-        ctx += f" Concern: {concern}."
-    elif vreq >= 3:
-        ctx += " No major red flags."
-
-    return f"{sentence1} {ctx}".strip()
-
-
 def load_merged(artifacts="artifacts"):
     sims = compute_similarity(os.path.join(artifacts, "candidate_embeddings.npy"),
                               os.path.join(artifacts, "jd_embedding.npy"))
@@ -187,11 +129,15 @@ def load_merged(artifacts="artifacts"):
 def compute_phase1(df):
     """Phase-1 score (relevance core × soft modifiers × hard gates). Sets and
     returns df['phase1_score']."""
-    sim_norm = minmax(df["cosine_sim"].to_numpy(dtype=float))
-    sk = skill_score(df).to_numpy(dtype=float)
+    sim_norm = pct(df["cosine_sim"])
+    sk = skill_score(df)
+    # "built a JD-type system" signal: saturating curve so non-builders sit at 0 and
+    # builders scale up (the JD's headline fit: shipped a ranking/search/rec system).
+    system_signal = 1.0 - np.exp(-df["system_build_score"].to_numpy(dtype=float) / 1.5)
     relevance = (
         W_SIM * sim_norm
         + W_SKILL * sk
+        + W_SYSTEM * system_signal
         + W_EXP * df["experience_fit"].to_numpy(dtype=float)
         + W_PROD * df["product_company_fraction"].to_numpy(dtype=float)
         + CORE_ML_TITLE_BONUS * df["is_core_ml_title"].to_numpy(dtype=float)
@@ -203,10 +149,8 @@ def compute_phase1(df):
     engagement_mod = ENGAGEMENT_FLOOR + (1 - ENGAGEMENT_FLOOR) * engagement_score(df)
 
     yrs = df["years_of_experience"].to_numpy(dtype=float)
-    overexp_mod = np.clip(
-        1.0 - np.maximum(yrs - OVEREXP_START, 0.0) / (OVEREXP_FULL - OVEREXP_START) * (1 - OVEREXP_FLOOR),
-        OVEREXP_FLOOR, 1.0,
-    )
+    band_dist = np.maximum(BAND_MIN - yrs, 0.0) + np.maximum(yrs - BAND_MAX, 0.0)
+    band_mod = np.clip(1.0 - band_dist * BAND_PER_YEAR, BAND_FLOOR, 1.0)
 
     resp = df["recruiter_response_rate"].to_numpy(dtype=float)
     response_mod = np.where(
@@ -215,7 +159,7 @@ def compute_phase1(df):
         RESPONSE_FLOOR + (1 - RESPONSE_FLOOR) * (resp / RESPONSE_OK),
     )
 
-    score = relevance * location_mod * notice_mod * engagement_mod * overexp_mod * response_mod
+    score = relevance * location_mod * notice_mod * engagement_mod * band_mod * response_mod
 
     score = np.where(df["is_consulting_only"], score * PENALTY_CONSULTING_ONLY, score)
     score = np.where(df["is_vision_speech_only"], score * PENALTY_VISION_SPEECH, score)
@@ -260,8 +204,8 @@ def rerank(df, artifacts="artifacts"):
         dtype=float,
     )
 
-    ce_norm = minmax(ce_raw)
-    p1_norm = minmax(shortlist["phase1_score"].to_numpy(dtype=float))
+    ce_norm = pct(ce_raw)
+    p1_norm = pct(shortlist["phase1_score"])
     shortlist["final_score"] = np.round((1 - ALPHA) * p1_norm + ALPHA * ce_norm, 6)
     return shortlist
 
