@@ -10,7 +10,7 @@ from sentence_transformers import SentenceTransformer
 
 ##embedddin model
 MODEL_NAME = "all-MiniLM-L6-v2"
-BATCH_SIZE = 700
+BATCH_SIZE = 456
 
 
 # The ONLY thing we embed for the JD. MiniLM truncates at 256 tokens, so this is a
