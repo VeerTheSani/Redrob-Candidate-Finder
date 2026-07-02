@@ -37,7 +37,7 @@ reproduce_command: "python rank.py --out submission.csv"
 # Compute environment
 # ============================================================================
 compute:
-  platform: "Local Windows PC"                 # >>> FILL IN (e.g. exact CPU / laptop model)
+  platform: "Lenovo LOQ intel i5 12450H & 16GB DDR5 RAM"                 # >>> FILL IN (e.g. exact CPU / laptop model)
   cpu_cores: 8                                  # >>> FILL IN (your core count)
   ram_gb: 16                                    # >>> FILL IN (your RAM)
   python_version: "3.14"                        # >>> VERIFY with: python --version
@@ -45,7 +45,7 @@ compute:
   uses_gpu_for_inference: false                 # ranking is CPU-only
   has_network_during_ranking: false             # rank.py sets HF_HUB_OFFLINE=1
   pre_computation_required: true                # we precompute embeddings + reranker
-  pre_computation_time_minutes: 35              # python precompute_all.py (~33 min embed + ~2 min)
+  pre_computation_time_minutes: 31              # python precompute_all.py
 
 # ============================================================================
 # AI tools declaration
